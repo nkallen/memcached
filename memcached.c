@@ -59,6 +59,8 @@ std *
 #endif
 #endif
 
+#include "sigseg.h"
+
 /*
  * forward declarations
  */
@@ -2962,6 +2964,7 @@ int main (int argc, char **argv) {
             break;
         case 'd':
             daemonize = true;
+            setup_sigsegv();
             break;
         case 'r':
             maxcore = 1;
