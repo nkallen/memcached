@@ -206,12 +206,13 @@ static void settings_init(void) {
     settings.factor = 1.25;
     settings.chunk_size = 48;         /* space for a modest key and value */
 #ifdef USE_THREADS
-    settings.num_threads = 4;
+    settings.num_threads = 4 + 1;     /* N workers + 1 dispatcher */
 #else
     settings.num_threads = 1;
 #endif
     settings.prefix_delimiter = ':';
     settings.detail_enabled = 0;
+    settings.reqs_per_event = 1;
 }
 
 /* returns true if a deleted item's delete-locked-time is over, and it
@@ -1092,25 +1093,23 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
         SPCAT2("STAT curr_items %u\r\n", stats.curr_items);
         SPCAT2("STAT total_items %u\r\n", stats.total_items);
         SPCAT2("STAT bytes %" PRINTF_INT64_MODIFIER "u\r\n", stats.curr_bytes);
-        /* ignore listening conn */
+        /* ignore listening conn XXX:  Validate against all listeners */
         SPCAT2("STAT curr_connections %u\r\n", stats.curr_conns - 1);
         SPCAT2("STAT total_connections %u\r\n", stats.total_conns);
         SPCAT2("STAT connection_structures %u\r\n", stats.conn_structs);
         SPCAT2("STAT cmd_get %" PRINTF_INT64_MODIFIER "u\r\n", stats.get_cmds);
         SPCAT2("STAT cmd_set %" PRINTF_INT64_MODIFIER "u\r\n", stats.set_cmds);
-        SPCAT2("STAT get_hits %" PRINTF_INT64_MODIFIER "u\r\n",
-            stats.get_hits);
-        SPCAT2("STAT get_misses %" PRINTF_INT64_MODIFIER "u\r\n",
-            stats.get_misses);
+        SPCAT2("STAT get_hits %" PRINTF_INT64_MODIFIER "u\r\n", stats.get_hits);
+        SPCAT2("STAT get_misses %" PRINTF_INT64_MODIFIER "u\r\n", stats.get_misses);
         SPCAT2("STAT hit_rate %g%%\r\n",
-            (stats.get_hits + stats.get_misses) == 0 ? 0.0 :
-                (double)stats.get_hits * 100 / (stats.get_hits + stats.get_misses));
+            (stats.get_hits + stats.get_misses) == 0 ? 0.0
+                : (double)stats.get_hits * 100 / (stats.get_hits + stats.get_misses));
         SPCAT2("STAT evictions %" PRINTF_INT64_MODIFIER "u\r\n", stats.evictions);
         SPCAT2("STAT bytes_read %" PRINTF_INT64_MODIFIER "u\r\n", stats.bytes_read);
         SPCAT2("STAT bytes_written %" PRINTF_INT64_MODIFIER "u\r\n", stats.bytes_written);
-        SPCAT2("STAT limit_maxbytes %" PRINTF_INT64_MODIFIER "u\r\n",
-            (uint64_t) settings.maxbytes);
+        SPCAT2("STAT limit_maxbytes %" PRINTF_INT64_MODIFIER "u\r\n", (uint64_t) settings.maxbytes);
         SPCAT2("STAT threads %u\r\n", settings.num_threads);
+        offset = append_thread_stats(temp, bufsize, offset, sizeof(terminator));
         offset = append_to_buffer(temp, bufsize, offset, 0, terminator);
         STATS_UNLOCK();
         out_string(c, temp);
@@ -2145,6 +2144,7 @@ static void drive_machine(conn *c) {
     int sfd, flags = 1;
     socklen_t addrlen;
     struct sockaddr_storage addr;
+    int nreqs = settings.reqs_per_event;
     int res;
 
     assert(c != NULL);
@@ -2177,13 +2177,18 @@ static void drive_machine(conn *c) {
             }
             dispatch_conn_new(sfd, conn_read, EV_READ | EV_PERSIST,
                                      DATA_BUFFER_SIZE, false);
+
             break;
 
         case conn_read:
             if (try_read_command(c) != 0) {
                 continue;
             }
-            if ((c->udp ? try_read_udp(c) : try_read_network(c)) != 0) {
+            /* If we haven't exhausted our request-per-event limit and there's more
+               to read, keep going, otherwise stop to give another conn a
+               chance or wait */
+            if(nreqs && ((c->udp ? try_read_udp(c) : try_read_network(c)) != 0)) {
+                nreqs--;
                 continue;
             }
             /* we have no command line and no data to read from network */
@@ -2517,10 +2522,10 @@ static int server_socket(const int port, const bool is_udp) {
       {
         int c;
 
-        for (c = 0; c < settings.num_threads; c++) {
+        for (c = 1; c < settings.num_threads; c++) {
             /* this is guaranteed to hit all threads because we round-robin */
             dispatch_conn_new(sfd, conn_read, EV_READ | EV_PERSIST,
-                              UDP_READ_BUFFER_SIZE, 1);
+                              UDP_READ_BUFFER_SIZE, is_udp);
         }
       } else {
         if (!(listen_conn_add = conn_new(sfd, conn_listening,
@@ -2732,6 +2737,9 @@ static void usage(void) {
 #ifdef USE_THREADS
     printf("-t <num>      number of threads to use, default 4\n");
 #endif
+    printf("-R            Maximum number of requests per event\n"
+           "              limits the number of requests process for a given connection\n"
+           "              to prevent starvation.  default 10\n");
     return;
 }
 
@@ -2909,7 +2917,7 @@ int main (int argc, char **argv) {
     setbuf(stderr, NULL);
 
     /* process arguments */
-    while ((c = getopt(argc, argv, "a:bp:s:U:m:Mc:khirvdl:u:P:f:s:n:t:D:L")) != -1) {
+    while ((c = getopt(argc, argv, "a:bp:s:U:m:Mc:khirvdl:u:P:f:s:n:t:D:LR:")) != -1) {
         switch (c) {
         case 'a':
             /* access for unix domain socket, as octal mask (like chmod)*/
@@ -2958,6 +2966,13 @@ int main (int argc, char **argv) {
         case 'r':
             maxcore = 1;
             break;
+        case 'R':
+            settings.reqs_per_event = atoi(optarg);
+            if (settings.reqs_per_event == 0) {
+                fprintf(stderr, "Number of requests per event must be greater than 0\n");
+                return 1;
+            }
+            break;
         case 'u':
             username = optarg;
             break;
@@ -2979,7 +2994,7 @@ int main (int argc, char **argv) {
             }
             break;
         case 't':
-            settings.num_threads = atoi(optarg);
+            settings.num_threads = atoi(optarg) + 1; /* extra thread for dispatcher */
             if (settings.num_threads == 0) {
                 fprintf(stderr, "Number of threads must be greater than 0\n");
                 return 1;

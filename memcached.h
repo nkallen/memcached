@@ -102,6 +102,8 @@ struct settings {
     int num_threads;        /* number of libevent threads to run */
     char prefix_delimiter;  /* character that marks a key prefix (for stats) */
     int detail_enabled;     /* nonzero if we're collecting detailed stats */
+    int reqs_per_event;     /* Maximum number of requests to process on each
+                               io-event. */
 };
 
 extern struct stats stats;
@@ -278,6 +280,7 @@ void dispatch_conn_new(int sfd, int init_state, int event_flags, int read_buffer
 
 /* Lock wrappers for cache functions that are called from main loop. */
 char *mt_add_delta(item *item, const int incr, const int64_t delta, char *buf);
+size_t mt_append_thread_stats(char* const buf, const size_t size, const size_t offset, const size_t reserved);
 void mt_assoc_move_next_bucket(void);
 conn *mt_conn_from_freelist(void);
 bool  mt_conn_add_to_freelist(conn *c);
@@ -307,6 +310,7 @@ int   mt_store_item(item *item, int comm);
 
 
 # define add_delta(x,y,z,a)          mt_add_delta(x,y,z,a)
+# define append_thread_stats         mt_append_thread_stats
 # define assoc_move_next_bucket()    mt_assoc_move_next_bucket()
 # define conn_from_freelist()        mt_conn_from_freelist()
 # define conn_add_to_freelist(x)     mt_conn_add_to_freelist(x)
@@ -338,6 +342,7 @@ int   mt_store_item(item *item, int comm);
 #else /* !USE_THREADS */
 
 # define add_delta(x,y,z,a)          do_add_delta(x,y,z,a)
+# define append_thread_stats(b,s,o,r) o
 # define assoc_move_next_bucket()    do_assoc_move_next_bucket()
 # define conn_from_freelist()        do_conn_from_freelist()
 # define conn_add_to_freelist(x)     do_conn_add_to_freelist(x)
