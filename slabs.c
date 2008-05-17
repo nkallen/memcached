@@ -288,8 +288,9 @@ void do_slabs_free(void *ptr, const size_t size, unsigned int id) {
 /*@null@*/
 char* do_slabs_stats(int *buflen) {
     int i, total;
-    char *buf = (char *)malloc(power_largest * 200 + 100);
-    char *bufcurr = buf;
+    size_t bufsize = power_largest * 1024 + 100, offset = 0;
+    char *buf = (char *)malloc(bufsize);
+    char terminator[] = "END\r\n";
 
     *buflen = 0;
     if (buf == NULL) return NULL;
@@ -303,19 +304,19 @@ char* do_slabs_stats(int *buflen) {
             slabs = p->slabs;
             perslab = p->perslab;
 
-            bufcurr += sprintf(bufcurr, "STAT %d:chunk_size %u\r\n", i, p->size);
-            bufcurr += sprintf(bufcurr, "STAT %d:chunks_per_page %u\r\n", i, perslab);
-            bufcurr += sprintf(bufcurr, "STAT %d:total_pages %u\r\n", i, slabs);
-            bufcurr += sprintf(bufcurr, "STAT %d:total_chunks %u\r\n", i, slabs*perslab);
-            bufcurr += sprintf(bufcurr, "STAT %d:used_chunks %u\r\n", i, slabs*perslab - p->sl_curr);
-            bufcurr += sprintf(bufcurr, "STAT %d:free_chunks %u\r\n", i, p->sl_curr);
-            bufcurr += sprintf(bufcurr, "STAT %d:free_chunks_end %u\r\n", i, p->end_page_free);
+            offset = append_to_buffer(buf, bufsize, offset, sizeof(terminator), "STAT %d:chunk_size %u\r\n", i, p->size);
+            offset = append_to_buffer(buf, bufsize, offset, sizeof(terminator), "STAT %d:chunks_per_page %u\r\n", i, perslab);
+            offset = append_to_buffer(buf, bufsize, offset, sizeof(terminator), "STAT %d:total_pages %u\r\n", i, slabs);
+            offset = append_to_buffer(buf, bufsize, offset, sizeof(terminator), "STAT %d:total_chunks %u\r\n", i, slabs*perslab);
+            offset = append_to_buffer(buf, bufsize, offset, sizeof(terminator), "STAT %d:used_chunks %u\r\n", i, slabs * perslab - p->sl_curr);
+            offset = append_to_buffer(buf, bufsize, offset, sizeof(terminator), "STAT %d:free_chunks %u\r\n", i, p->sl_curr);
+            offset = append_to_buffer(buf, bufsize, offset, sizeof(terminator), "STAT %d:free_chunks_end %u\r\n", i, p->end_page_free);
             total++;
         }
     }
-    bufcurr += sprintf(bufcurr, "STAT active_slabs %d\r\nSTAT total_malloced %llu\r\n", total, (unsigned long long)mem_malloced);
-    bufcurr += sprintf(bufcurr, "END\r\n");
-    *buflen = bufcurr - buf;
+    offset = append_to_buffer(buf, bufsize, offset, sizeof(terminator), "STAT active_slabs %d\r\nSTAT total_malloced %llu\r\n", total, mem_malloced);
+    offset = append_to_buffer(buf, bufsize, offset, 0, terminator);
+    *buflen = (int) offset;
     return buf;
 }
 

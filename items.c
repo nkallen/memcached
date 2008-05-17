@@ -379,7 +379,9 @@ char *do_item_stats(int *bytes) {
 char* do_item_stats_sizes(int *bytes) {
     const int num_buckets = 32768;   /* max 1MB object, divided into 32 bytes size buckets */
     unsigned int *histogram = (unsigned int *)malloc((size_t)num_buckets * sizeof(int));
-    char *buf = (char *)malloc(2 * 1024 * 1024); /* 2MB max response size */
+    size_t bufsize = (2 * 1024 * 1024), offset = 0;
+    char *buf = (char *)malloc(bufsize); /* 2MB max response size */
+    char terminator[] = "END\r\n";
     int i;
 
     if (histogram == 0 || buf == 0) {
@@ -405,10 +407,11 @@ char* do_item_stats_sizes(int *bytes) {
     *bytes = 0;
     for (i = 0; i < num_buckets; i++) {
         if (histogram[i] != 0) {
-            *bytes += sprintf(&buf[*bytes], "%d %u\r\n", i * 32, histogram[i]);
+            offset = append_to_buffer(buf, bufsize, offset, sizeof(terminator), "%d %u\r\n", i * 32, histogram[i]);
         }
     }
-    *bytes += sprintf(&buf[*bytes], "END\r\n");
+    offset = append_to_buffer(buf, bufsize, offset, 0, terminator);
+    *bytes = (int) offset;
     free(histogram);
     return buf;
 }
