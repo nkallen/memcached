@@ -287,9 +287,18 @@ void do_item_update(item *it) {
 }
 
 int do_item_replace(item *it, item *new_it) {
-    assert((it->it_flags & ITEM_SLABBED) == 0);
-
-    do_item_unlink(it);
+    // If item is already unlinked by another thread, we'd get the current one.
+    if ((it->it_flags & ITEM_LINKED) == 0) {
+        it = assoc_find(ITEM_key(it), it->nkey);
+    }
+    // It's possible assoc_find at above finds no item associated with the key
+    // any more. For example, when incr and delete is called at the same time,
+    // item_get() gets an old item, but item is removed from assoc table in the
+    // middle.
+    if (it) {
+        assert((it->it_flags & ITEM_SLABBED) == 0);
+        do_item_unlink(it);
+    }
     return do_item_link(new_it);
 }
 
