@@ -1044,6 +1044,14 @@ inline static void process_stats_detail(conn *c, const char *command) {
     }
 }
 
+/* Macros to DRY out the code a bit and shorten the lines some. */
+#define SPCAT1(a) offset = append_to_buffer( \
+        temp, bufsize, offset, sizeof(terminator), a)
+#define SPCAT2(a,b) offset = append_to_buffer( \
+        temp, bufsize, offset, sizeof(terminator), a, b)
+#define SPCAT3(a,b,c) offset = append_to_buffer( \
+        temp, bufsize, offset, sizeof(terminator), a, b, c)
+
 static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
     rel_time_t now = current_time;
     char *command;
@@ -1070,31 +1078,39 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
 #endif /* !WIN32 */
 
         STATS_LOCK();
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT pid %u\r\n", pid);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT uptime %u\r\n", now);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT time %ld\r\n", now + stats.started);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT version " VERSION "\r\n");
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT pointer_size %lu\r\n", 8 * sizeof(void *));
+        SPCAT2("STAT pid %u\r\n", pid);
+        SPCAT2("STAT uptime %u\r\n", now);
+        SPCAT2("STAT time %ld\r\n", now + stats.started);
+        SPCAT1("STAT version " VERSION "\r\n");
+        SPCAT2("STAT pointer_size %lu\r\n", 8 * sizeof(void *));
 #ifndef WIN32
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT rusage_user %ld.%06d\r\n", usage.ru_utime.tv_sec, (int) usage.ru_utime.tv_usec);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT rusage_system %ld.%06d\r\n", usage.ru_stime.tv_sec, (int) usage.ru_stime.tv_usec);
+        SPCAT3("STAT rusage_user %ld.%06d\r\n",
+            usage.ru_utime.tv_sec, (int) usage.ru_utime.tv_usec);
+        SPCAT3("STAT rusage_system %ld.%06d\r\n",
+            usage.ru_stime.tv_sec, (int) usage.ru_stime.tv_usec);
 #endif /* !WIN32 */
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT curr_items %u\r\n", stats.curr_items);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT total_items %u\r\n", stats.total_items);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT bytes %" PRINTF_INT64_MODIFIER "u\r\n", stats.curr_bytes);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT curr_connections %u\r\n", stats.curr_conns - 1); /* ignore listening conn */
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT total_connections %u\r\n", stats.total_conns);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT connection_structures %u\r\n", stats.conn_structs);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT cmd_get %" PRINTF_INT64_MODIFIER "u\r\n", stats.get_cmds);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT cmd_set %" PRINTF_INT64_MODIFIER "u\r\n", stats.set_cmds);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT get_hits %" PRINTF_INT64_MODIFIER "u\r\n", stats.get_hits);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT get_misses %" PRINTF_INT64_MODIFIER "u\r\n", stats.get_misses);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT hit_rate %g%%\r\n", (stats.get_hits + stats.get_misses) == 0 ? 0.0 : (double)stats.get_hits * 100 / (stats.get_hits + stats.get_misses));
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT evictions %" PRINTF_INT64_MODIFIER "u\r\n", stats.evictions);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT bytes_read %" PRINTF_INT64_MODIFIER "u\r\n", stats.bytes_read);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT bytes_written %" PRINTF_INT64_MODIFIER "u\r\n", stats.bytes_written);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT limit_maxbytes %" PRINTF_INT64_MODIFIER "u\r\n", (uint64_t) settings.maxbytes);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT threads %u\r\n", settings.num_threads);
+        SPCAT2("STAT curr_items %u\r\n", stats.curr_items);
+        SPCAT2("STAT total_items %u\r\n", stats.total_items);
+        SPCAT2("STAT bytes %" PRINTF_INT64_MODIFIER "u\r\n", stats.curr_bytes);
+        /* ignore listening conn */
+        SPCAT2("STAT curr_connections %u\r\n", stats.curr_conns - 1);
+        SPCAT2("STAT total_connections %u\r\n", stats.total_conns);
+        SPCAT2("STAT connection_structures %u\r\n", stats.conn_structs);
+        SPCAT2("STAT cmd_get %" PRINTF_INT64_MODIFIER "u\r\n", stats.get_cmds);
+        SPCAT2("STAT cmd_set %" PRINTF_INT64_MODIFIER "u\r\n", stats.set_cmds);
+        SPCAT2("STAT get_hits %" PRINTF_INT64_MODIFIER "u\r\n",
+            stats.get_hits);
+        SPCAT2("STAT get_misses %" PRINTF_INT64_MODIFIER "u\r\n",
+            stats.get_misses);
+        SPCAT2("STAT hit_rate %g%%\r\n",
+            (stats.get_hits + stats.get_misses) == 0 ? 0.0 :
+                (double)stats.get_hits * 100 / (stats.get_hits + stats.get_misses));
+        SPCAT2("STAT evictions %" PRINTF_INT64_MODIFIER "u\r\n", stats.evictions);
+        SPCAT2("STAT bytes_read %" PRINTF_INT64_MODIFIER "u\r\n", stats.bytes_read);
+        SPCAT2("STAT bytes_written %" PRINTF_INT64_MODIFIER "u\r\n", stats.bytes_written);
+        SPCAT2("STAT limit_maxbytes %" PRINTF_INT64_MODIFIER "u\r\n",
+            (uint64_t) settings.maxbytes);
+        SPCAT2("STAT threads %u\r\n", settings.num_threads);
         offset = append_to_buffer(temp, bufsize, offset, 0, terminator);
         STATS_UNLOCK();
         out_string(c, temp);
@@ -1118,16 +1134,16 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
         struct mallinfo info;
 
         info = mallinfo();
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT arena_size %d\r\n", info.arena);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT free_chunks %d\r\n", info.ordblks);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT fastbin_blocks %d\r\n", info.smblks);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT mmapped_regions %d\r\n", info.hblks);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT mmapped_space %d\r\n", info.hblkhd);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT max_total_alloc %d\r\n", info.usmblks);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT fastbin_space %d\r\n", info.fsmblks);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT total_alloc %d\r\n", info.uordblks);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT total_free %d\r\n", info.fordblks);
-        offset = append_to_buffer(temp, bufsize, offset, sizeof(terminator), "STAT releasable_space %d\r\n", info.keepcost);
+        SPCAT2("STAT arena_size %d\r\n", info.arena);
+        SPCAT2("STAT free_chunks %d\r\n", info.ordblks);
+        SPCAT2("STAT fastbin_blocks %d\r\n", info.smblks);
+        SPCAT2("STAT mmapped_regions %d\r\n", info.hblks);
+        SPCAT2("STAT mmapped_space %d\r\n", info.hblkhd);
+        SPCAT2("STAT max_total_alloc %d\r\n", info.usmblks);
+        SPCAT2("STAT fastbin_space %d\r\n", info.fsmblks);
+        SPCAT2("STAT total_alloc %d\r\n", info.uordblks);
+        SPCAT2("STAT total_free %d\r\n", info.fordblks);
+        SPCAT2("STAT releasable_space %d\r\n", info.keepcost);
         offset = append_to_buffer(temp, bufsize, offset, 0, terminator);
         out_string(c, temp);
         return;

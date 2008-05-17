@@ -407,7 +407,8 @@ char* do_item_stats_sizes(int *bytes) {
     *bytes = 0;
     for (i = 0; i < num_buckets; i++) {
         if (histogram[i] != 0) {
-            offset = append_to_buffer(buf, bufsize, offset, sizeof(terminator), "%d %u\r\n", i * 32, histogram[i]);
+            offset = append_to_buffer(buf, bufsize, offset,
+                sizeof(terminator), "%d %u\r\n", i * 32, histogram[i]);
         }
     }
     offset = append_to_buffer(buf, bufsize, offset, 0, terminator);
